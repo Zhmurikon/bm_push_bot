@@ -6,7 +6,7 @@ from rest_framework.decorators import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from .models import Lead, Project, Subscription, hash_token
+from .models import Delivery, Lead, Project, Subscription, hash_token
 from .serializers import LeadSerializer
 from .services import render_lead_text, send_telegram_message
 
@@ -68,6 +68,13 @@ def create_lead(request: Request):
     for sub in subscriptions:
         try:
             result = _send_message(sub.recipient.chat_id, rendered_text)
+            delivery = Delivery.objects.create(
+                lead=lead,
+                recipient=sub.recipient,
+                message_id=result.get("message_id"),
+                ok=result["ok"],
+                error=result.get("error", ""),
+            )
             if result["ok"]:
                 delivered += 1
             else:
@@ -77,8 +84,10 @@ def create_lead(request: Request):
                     sub.recipient.is_active = False
                     sub.recipient.save(update_fields=["is_active"])
         except TimeoutError:
+            Delivery.objects.create(lead=lead, recipient=sub.recipient, error="timeout")
             logger.warning("Telegram timeout for chat %s", sub.recipient.chat_id)
-        except Exception:
+        except Exception as exc:
+            Delivery.objects.create(lead=lead, recipient=sub.recipient, error=str(exc))
             logger.exception("Failed to send to chat %s", sub.recipient.chat_id)
 
     return Response({"id": lead.pk, "delivered": delivered}, status=status.HTTP_201_CREATED)

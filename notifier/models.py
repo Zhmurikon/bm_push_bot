@@ -104,6 +104,28 @@ class Lead(models.Model):
         return f"Заявка #{self.pk} — {self.project}"
 
 
+class Delivery(models.Model):
+    lead = models.ForeignKey(
+        Lead, on_delete=models.CASCADE, related_name="deliveries", verbose_name="заявка"
+    )
+    recipient = models.ForeignKey(
+        Recipient, on_delete=models.CASCADE, related_name="deliveries", verbose_name="получатель"
+    )
+    message_id = models.BigIntegerField("message_id", null=True, blank=True)
+    ok = models.BooleanField("доставлено", default=False)
+    error = models.TextField("ошибка", blank=True)
+    sent_at = models.DateTimeField("отправлено", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "доставка"
+        verbose_name_plural = "доставки"
+        ordering = ["-sent_at"]
+
+    def __str__(self):
+        status = "✅" if self.ok else "❌"
+        return f"{status} → {self.recipient}"
+
+
 def generate_invite_code() -> str:
     chars = string.ascii_uppercase + string.digits
     return "INV-" + "".join(secrets.choice(chars) for _ in range(6))

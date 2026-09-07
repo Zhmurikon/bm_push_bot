@@ -47,4 +47,10 @@ async def send_telegram_message(chat_id: int, text: str) -> dict:
     async with ClientSession(connector=connector) as session:
         async with session.post(url, json=data, timeout=10) as resp:
             body = await resp.json()
-            return {"ok": body.get("ok", False), "result": body.get("result"), "error": body.get("description")}
+            result = body.get("result", {})
+            message_id = result.get("message_id") if isinstance(result, dict) else None
+            return {
+                "ok": body.get("ok", False),
+                "message_id": message_id,
+                "error": body.get("description", ""),
+            }

@@ -1,7 +1,7 @@
 from django.contrib import admin, messages
 from django.utils.html import format_html
 
-from .models import Invite, Lead, Project, Recipient, Subscription, generate_token, hash_token
+from .models import Delivery, Invite, Lead, Project, Recipient, Subscription, generate_token, hash_token
 
 
 class InviteInline(admin.TabularInline):
@@ -24,8 +24,23 @@ class ProjectAdmin(admin.ModelAdmin):
     search_fields = ["name", "slug"]
     prepopulated_fields = {"slug": ("name",)}
     inlines = [SubscriptionInline, InviteInline]
+    readonly_fields = ["template_preview"]
+    fieldsets = (
+        (None, {"fields": ("name", "slug", "site_url", "is_active")}),
+        ("Сообщения", {"fields": ("template", "template_preview", "buttons_enabled")}),
+    )
 
     _created_tokens: dict[int, str] = {}
+
+    @admin.display(description="предпросмотр")
+    def template_preview(self, obj):
+        from .services import render_lead_text
+        sample_payload = {"fields": {"Имя": "Иван Иванов", "Телефон": "+7 999 123-45-67"}}
+        try:
+            text = render_lead_text(obj, sample_payload, "тестовая форма")
+            return format_html("<pre style='white-space:pre-wrap'>{}</pre>", text)
+        except Exception as e:
+            return format_html("<span style='color:red'>Ошибка: {}</span>", e)
 
     def save_model(self, request, obj, form, change):
         if not change:
@@ -64,16 +79,32 @@ class SubscriptionAdmin(admin.ModelAdmin):
     autocomplete_fields = ["project", "recipient"]
 
 
+class DeliveryInline(admin.TabularInline):
+    model = Delivery
+    extra = 0
+    readonly_fields = ["recipient", "message_id", "ok", "error", "sent_at"]
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(Lead)
 class LeadAdmin(admin.ModelAdmin):
-    list_display = ["__str__", "project", "status", "source", "created_at"]
+    list_display = ["__str__", "project", "status", "delivered_count", "source", "created_at"]
     list_filter = ["status", "project"]
     search_fields = ["payload"]
     readonly_fields = ["project", "payload", "rendered_text", "source", "idempotency_key", "created_at"]
     date_hierarchy = "created_at"
+    inlines = [DeliveryInline]
 
     def has_add_permission(self, request):
         return False
+
+    @admin.display(description="доставлено")
+    def delivered_count(self, obj):
+        ok = obj.deliveries.filter(ok=True).count()
+        total = obj.deliveries.count()
+        return f"{ok}/{total}"
 
 
 @admin.register(Invite)
