@@ -8,7 +8,7 @@ from rest_framework.response import Response
 
 from .models import Delivery, Lead, Project, Subscription, hash_token
 from .serializers import LeadSerializer
-from .services import render_lead_text, send_telegram_message
+from .services import build_lead_keyboard, render_lead_text, send_telegram_message
 
 logger = logging.getLogger(__name__)
 
@@ -64,10 +64,12 @@ def create_lead(request: Request):
         project=project, is_active=True, recipient__is_active=True
     ).select_related("recipient")
 
+    reply_markup = build_lead_keyboard(lead.pk, lead.status) if project.buttons_enabled else None
+
     delivered = 0
     for sub in subscriptions:
         try:
-            result = _send_message(sub.recipient.chat_id, rendered_text)
+            result = _send_message(sub.recipient.chat_id, rendered_text, reply_markup)
             delivery = Delivery.objects.create(
                 lead=lead,
                 recipient=sub.recipient,
