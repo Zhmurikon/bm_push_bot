@@ -7,8 +7,10 @@ router = Router()
 
 @router.message(CommandStart())
 async def cmd_start(message: Message):
+    chat_id = message.chat.id
     await message.answer(
-        "👋 Привет! Я бот уведомлений о заявках.\n\n"
+        f"👋 Привет! Я бот уведомлений о заявках.\n\n"
+        f"Ваш chat_id: `{chat_id}`\n\n"
         "Для подключения нужен код приглашения — "
         "перейдите по ссылке, которую вам прислал администратор."
     )
