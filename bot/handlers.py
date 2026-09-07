@@ -1,7 +1,8 @@
+import html
 import os
 import sys
 
-from aiogram import Dispatcher, F, Router
+from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, ChatMemberUpdated, Message
 from asgiref.sync import sync_to_async
@@ -36,13 +37,24 @@ def _process_invite(code: str, chat_id: int, chat_type: str, chat_title: str) ->
     kind = "group" if chat_type in ("group", "supergroup") else "private"
     title = chat_title or str(chat_id)
 
-    recipient, _ = Recipient.objects.get_or_create(
+    recipient, created = Recipient.objects.get_or_create(
         chat_id=chat_id,
         defaults={"kind": kind, "title": title, "is_active": True},
     )
-    if not recipient.is_active:
-        recipient.is_active = True
-        recipient.save(update_fields=["is_active"])
+    if not created:
+        # чат мог быть переименован или превращён в супергруппу — обновляем карточку
+        changed = []
+        if recipient.kind != kind:
+            recipient.kind = kind
+            changed.append("kind")
+        if title and recipient.title != title:
+            recipient.title = title
+            changed.append("title")
+        if not recipient.is_active:
+            recipient.is_active = True
+            changed.append("is_active")
+        if changed:
+            recipient.save(update_fields=changed)
 
     sub, sub_created = Subscription.objects.get_or_create(
         project=invite.project, recipient=recipient, defaults={"is_active": True},
@@ -237,7 +249,13 @@ def _create_invite(slug: str) -> dict:
     except Project.DoesNotExist:
         return {"error": "not_found"}
     invite = Invite.objects.create(project=project, is_multi_use=True)
-    return {"ok": True, "code": invite.code, "link": invite.invite_link, "project": project.name}
+    return {
+        "ok": True,
+        "code": invite.code,
+        "link": invite.invite_link,
+        "group_link": invite.group_invite_link,
+        "project": project.name,
+    }
 
 
 @sync_to_async
@@ -331,7 +349,9 @@ async def cmd_invite(message: Message, command=None):
         await message.answer(
             f"Код приглашения для <b>{result['project']}</b>:\n"
             f"<code>{result['code']}</code>\n\n"
-            f"Ссылка: {result['link']}",
+            f"Личный чат: {result['link']}\n"
+            f"Добавить в группу: {result['group_link']}\n\n"
+            f"Если бот уже в группе — отправьте туда <code>/start {result['code']}</code>",
             parse_mode="HTML",
         )
 
@@ -387,13 +407,44 @@ async def cmd_off(message: Message, command=None):
         await message.answer(f"Отключено {result['count']} подписок: {result['recipient']} ← {result['project']}")
 
 
-# ---- Бот заблокирован/удалён ----
+# ---- Групповые чаты: добавление, миграция, удаление ----
+
+@sync_to_async
+def _chat_projects(chat_id: int) -> list[str]:
+    _ensure_django()
+    from notifier.models import Subscription
+    return list(
+        Subscription.objects.filter(
+            recipient__chat_id=chat_id, is_active=True, recipient__is_active=True
+        ).values_list("project__name", flat=True)
+    )
+
 
 @router.my_chat_member()
-async def on_bot_membership_change(event: ChatMemberUpdated):
+async def on_bot_membership_change(event: ChatMemberUpdated, bot: Bot):
     new_status = event.new_chat_member.status
     if new_status in ("kicked", "left"):
         await _deactivate_chat(event.chat.id)
+        return
+
+    if new_status not in ("member", "administrator"):
+        return
+    if event.chat.type not in ("group", "supergroup"):
+        return
+
+    projects = await _chat_projects(event.chat.id)
+    if projects:
+        text = "✅ Заявки уже приходят сюда: " + ", ".join(html.escape(p) for p in projects)
+    else:
+        text = (
+            "👋 Я бот уведомлений о заявках.\n\n"
+            "Чтобы заявки приходили в этот чат, отправьте сюда код приглашения:\n"
+            "<code>/start INV-XXXXXX</code>"
+        )
+    try:
+        await bot.send_message(event.chat.id, text, parse_mode="HTML")
+    except Exception:
+        pass
 
 
 def register_handlers(dp: Dispatcher):

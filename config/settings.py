@@ -90,6 +90,7 @@ REST_FRAMEWORK = {
 
 # --- Telegram ---
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+BOT_USERNAME = os.getenv("BOT_USERNAME", "bm_push_bot")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
 PROXY_URL = os.getenv("PROXY_URL", "")

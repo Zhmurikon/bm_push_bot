@@ -2,6 +2,7 @@ import hashlib
 import secrets
 import string
 
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
@@ -166,4 +167,10 @@ class Invite(models.Model):
 
     @property
     def invite_link(self) -> str:
-        return f"https://t.me/bm_push_bot?start={self.code}"
+        """Ссылка для личного чата: открывает бота и отправляет /start <code>."""
+        return f"https://t.me/{settings.BOT_USERNAME}?start={self.code}"
+
+    @property
+    def group_invite_link(self) -> str:
+        """Ссылка для группы: добавляет бота в выбранный чат с тем же кодом."""
+        return f"https://t.me/{settings.BOT_USERNAME}?startgroup={self.code}"
