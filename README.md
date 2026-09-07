@@ -2,86 +2,123 @@
 
 Сервис уведомлений о заявках с сайтов — в Telegram, напрямую владельцу сайта.
 
-Бот: [@bm_push_bot](https://t.me/bm_push_bot)
+Бот: [@bm_push_bot](https://t.me/bm_push_bot)  
 Домен: `bmbot.yuriy-konkov.ru`
 
-## Зачем это
+## Что это
 
-Веб-студия Benchmark делает сайты. У каждого сайта есть форма заявки, и заявка
-должна дойти до владельца бизнеса. Telegram человек читает всегда.
+Веб-студия Benchmark делает сайты. Заявка с формы → мгновенно в Telegram владельцу. Без CRM, без паролей — только уведомления.
 
-**Продукт:** клиент подключает свой чат к боту один раз, дальше каждая заявка с
-его сайта приходит сообщением в течение секунды.
+## Возможности
+
+- **API для сайтов:** `POST /api/v1/leads/` с авторизацией по токену проекта
+- **Коды приглашения:** клиент подключается по ссылке, без участия студии
+- **Несколько получателей:** один сайт → несколько чатов, один чат → несколько сайтов
+- **Кнопки статусов:** «Взял в работу» → «Обработана» — видно в групповом чате
+- **Шаблоны:** настраиваемый текст сообщения для каждого проекта
+- **Админ-команды:** `/projects`, `/invite`, `/last`, `/send`, `/off`
+- **Delivery tracking:** для каждой доставки сохраняется message_id, статус, ошибки
+
+## Стек
+
+| Слой | Решение |
+|------|---------|
+| Web | Django 5.1 + DRF |
+| Bot | aiogram 3.17 (polling) |
+| DB | SQLite |
+| Deploy | Docker + docker-compose |
+| HTTPS | Nginx Proxy Manager + Let's Encrypt |
 
 ## Локальный запуск
 
-### Требования
-
-- Python 3.12+
-- Docker + docker-compose (для контейнерного запуска)
-
-### Быстрый старт (локально, без Docker)
-
 ```bash
-# 1. Создать виртуальное окружение
 python3 -m venv .venv
 source .venv/bin/activate
-
-# 2. Установить зависимости
 pip install -r requirements.txt
 
-# 3. Настроить переменные окружения
 cp .env.example .env
-# Отредактировать .env — указать BOT_TOKEN от BotFather
+# Отредактировать .env — указать BOT_TOKEN
 
-# 4. Применить миграции
 python manage.py migrate
-
-# 5. Создать суперпользователя (для доступа к админке)
 python manage.py createsuperuser
-
-# 6. Запустить dev-сервер
 python manage.py runserver 0.0.0.0:8000
+
+# В отдельном терминале:
+python -m bot.polling
 ```
 
 Админка: http://localhost:8000/admin/
 
-### Запуск бота в режиме polling (для локальной разработки)
-
-В отдельном терминале:
+## Продакшен
 
 ```bash
-source .venv/bin/activate
-python -m bot.polling
+# Деплой
+./scripts/deploy.sh
+
+# Логи
+ssh lidopad_static "docker compose -f /opt/bm_push_bot/docker-compose.prod.yml logs"
+
+# Рестарт бота
+ssh lidopad_static "docker compose -f /opt/bm_push_bot/docker-compose.prod.yml restart bot"
 ```
 
-### Запуск через Docker
+## API
+
+### Отправка заявки
 
 ```bash
-cp .env.example .env
-# Отредактировать .env
-
-docker compose up --build
+curl -X POST https://bmbot.yuriy-konkov.ru/api/v1/leads/ \
+  -H 'Authorization: Bearer bmp_live_...' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "fields": {"Имя": "Иван Иванов", "Телефон": "+79999999999"},
+    "source": "форма в подвале"
+  }'
 ```
 
-Сервис доступен на http://localhost:8000/
+Ответ: `{"id": 42, "delivered": 2}`
 
-## Структура проекта
+### Идемпотентность
 
-```
-config/          — настройки Django, ASGI/WSGI
-notifier/        — основное приложение (модели, API, админка)
-bot/             — Telegram-бот (aiogram)
-  app.py         — создание бота, интеграция webhook в ASGI
-  handlers.py    — обработчики команд
-  polling.py     — локальный запуск без webhook
+```bash
+curl ... -H 'Idempotency-Key: unique-key-123' ...
 ```
 
-## Прокси для Telegram
+Повторный запрос с тем же ключом не создаёт дубль.
 
-При локальной разработке и если сервер не имеет прямого доступа к Telegram API,
-используется SOCKS5h прокси. Укажите в `.env`:
+## Админ-команды (для администраторов)
+
+| Команда | Описание |
+|---------|----------|
+| `/projects` | Список проектов |
+| `/invite <slug>` | Создать код приглашения |
+| `/last <slug>` | Последние 5 заявок |
+| `/send <slug> <текст>` | Ручная рассылка |
+| `/off <slug> <chat_id>` | Отключить получателя |
+
+## Структура
 
 ```
-PROXY_URL=socks5h://0.0.0.0:9998
+config/           — Django settings, ASGI
+notifier/         — модели, API, админка
+  models.py       — Project, Recipient, Subscription, Lead, Delivery, Invite
+  views.py        — POST /api/v1/leads/
+  admin.py        — Django admin
+  services.py     — Telegram API, шаблоны
+  telegram_webhook.py — webhook endpoint (не используется, polling вместо него)
+bot/              — aiogram handlers
+  handlers.py     — /start, /stop, кнопки, админ-команды
+  polling.py      — запуск в polling-режиме
+deploy/           — nginx конфиг, .env.prod шаблон
+scripts/          — deploy.sh
 ```
+
+## Прокси
+
+Telegram API требует прокси (SOCKS5). Настраивается через `PROXY_URL` в .env:
+
+```
+PROXY_URL=socks5://localhost:9998
+```
+
+На сервере работает SSH-туннель (systemd-сервис `ssh-tunnel-telegram`).
