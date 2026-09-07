@@ -1,7 +1,14 @@
 from django.contrib import admin, messages
 from django.utils.html import format_html
 
-from .models import Lead, Project, Recipient, Subscription, generate_token, hash_token
+from .models import Invite, Lead, Project, Recipient, Subscription, generate_token, hash_token
+
+
+class InviteInline(admin.TabularInline):
+    model = Invite
+    extra = 0
+    readonly_fields = ["code", "used_by", "used_at"]
+    fields = ["code", "expires_at", "is_multi_use", "is_active"]
 
 
 class SubscriptionInline(admin.TabularInline):
@@ -16,7 +23,7 @@ class ProjectAdmin(admin.ModelAdmin):
     list_filter = ["is_active"]
     search_fields = ["name", "slug"]
     prepopulated_fields = {"slug": ("name",)}
-    inlines = [SubscriptionInline]
+    inlines = [SubscriptionInline, InviteInline]
 
     _created_tokens: dict[int, str] = {}
 
@@ -67,3 +74,17 @@ class LeadAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return False
+
+
+@admin.register(Invite)
+class InviteAdmin(admin.ModelAdmin):
+    list_display = ["code", "project", "invite_link_display", "is_multi_use", "is_valid", "used_by", "expires_at"]
+    list_filter = ["is_active", "is_multi_use", "project"]
+    search_fields = ["code"]
+    readonly_fields = ["code", "used_by", "used_at", "invite_link_display"]
+    autocomplete_fields = ["project"]
+
+    def invite_link_display(self, obj):
+        return format_html('<a href="{}">{}</a>', obj.invite_link, obj.invite_link)
+
+    invite_link_display.short_description = "ссылка"

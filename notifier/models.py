@@ -1,5 +1,6 @@
 import hashlib
 import secrets
+import string
 
 from django.db import models
 from django.utils import timezone
@@ -101,3 +102,46 @@ class Lead(models.Model):
 
     def __str__(self):
         return f"Заявка #{self.pk} — {self.project}"
+
+
+def generate_invite_code() -> str:
+    chars = string.ascii_uppercase + string.digits
+    return "INV-" + "".join(secrets.choice(chars) for _ in range(6))
+
+
+class Invite(models.Model):
+    code = models.CharField("код", max_length=20, unique=True, default=generate_invite_code)
+    project = models.ForeignKey(
+        Project, on_delete=models.CASCADE, related_name="invites", verbose_name="проект"
+    )
+    expires_at = models.DateTimeField("истекает", null=True, blank=True)
+    is_multi_use = models.BooleanField("многоразовый", default=False)
+    used_by = models.ForeignKey(
+        Recipient, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="used_invites", verbose_name="использован",
+    )
+    used_at = models.DateTimeField("дата использования", null=True, blank=True)
+    is_active = models.BooleanField("активен", default=True)
+    created_at = models.DateTimeField("создан", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "код приглашения"
+        verbose_name_plural = "коды приглашений"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.code} → {self.project}"
+
+    @property
+    def is_valid(self) -> bool:
+        if not self.is_active:
+            return False
+        if self.expires_at and timezone.now() > self.expires_at:
+            return False
+        if not self.is_multi_use and self.used_by is not None:
+            return False
+        return True
+
+    @property
+    def invite_link(self) -> str:
+        return f"https://t.me/bm_push_bot?start={self.code}"
