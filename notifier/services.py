@@ -62,6 +62,8 @@ async def send_telegram_message(chat_id: int, text: str, reply_markup: list | No
                 "ok": body.get("ok", False),
                 "message_id": message_id,
                 "error": body.get("description", ""),
+                # parameters.migrate_to_chat_id приходит, когда группа стала супергруппой
+                "parameters": body.get("parameters", {}) or {},
             }
 
 

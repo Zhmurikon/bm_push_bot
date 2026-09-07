@@ -420,6 +420,26 @@ def _chat_projects(chat_id: int) -> list[str]:
     )
 
 
+@sync_to_async
+def _migrate_chat_id(old_chat_id: int, new_chat_id: int) -> bool:
+    """Группа превратилась в супергруппу — у неё новый chat_id."""
+    _ensure_django()
+    from notifier.models import Recipient
+    if Recipient.objects.filter(chat_id=new_chat_id).exists():
+        Recipient.objects.filter(chat_id=old_chat_id).delete()
+        return True
+    return bool(
+        Recipient.objects.filter(chat_id=old_chat_id).update(
+            chat_id=new_chat_id, kind="group"
+        )
+    )
+
+
+@router.message(F.migrate_to_chat_id)
+async def on_chat_migrated(message: Message):
+    await _migrate_chat_id(message.chat.id, message.migrate_to_chat_id)
+
+
 @router.my_chat_member()
 async def on_bot_membership_change(event: ChatMemberUpdated, bot: Bot):
     new_status = event.new_chat_member.status

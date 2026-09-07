@@ -6,7 +6,7 @@ from rest_framework.decorators import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from .models import Delivery, Lead, Project, Subscription, hash_token
+from .models import Delivery, Lead, Project, Recipient, Subscription, hash_token
 from .serializers import LeadSerializer
 from .services import build_lead_keyboard, render_lead_text, send_telegram_message
 
@@ -70,6 +70,18 @@ def create_lead(request: Request):
     for sub in subscriptions:
         try:
             result = _send_message(sub.recipient.chat_id, rendered_text, reply_markup)
+
+            # Группу превратили в супергруппу — Telegram отдаёт новый chat_id
+            migrate_to = (result.get("parameters") or {}).get("migrate_to_chat_id")
+            if not result["ok"] and migrate_to:
+                logger.info(
+                    "Chat %s migrated to supergroup %s", sub.recipient.chat_id, migrate_to
+                )
+                sub.recipient.chat_id = migrate_to
+                sub.recipient.kind = Recipient.Kind.GROUP
+                sub.recipient.save(update_fields=["chat_id", "kind"])
+                result = _send_message(migrate_to, rendered_text, reply_markup)
+
             delivery = Delivery.objects.create(
                 lead=lead,
                 recipient=sub.recipient,
