@@ -197,14 +197,21 @@ async def on_lead_callback(callback: CallbackQuery):
 # ---- Админ-команды (Этап 6) ----
 
 @sync_to_async
-def _is_admin(chat_id: int) -> bool:
+def _is_admin_ids(chat_id: int, user_id: int | None) -> bool:
     _ensure_django()
     from notifier.models import Recipient
-    try:
-        r = Recipient.objects.get(chat_id=chat_id)
-        return r.is_admin
-    except Recipient.DoesNotExist:
-        return False
+    ids = {chat_id} | ({user_id} if user_id else set())
+    return Recipient.objects.filter(chat_id__in=ids, is_admin=True).exists()
+
+
+async def _is_admin(message: Message) -> bool:
+    """Админ определяется по автору команды, а не по чату.
+
+    В группе message.chat.id — id группы, поэтому проверять только его нельзя:
+    админ-команды переставали работать в групповых чатах.
+    """
+    user_id = message.from_user.id if message.from_user else None
+    return await _is_admin_ids(message.chat.id, user_id)
 
 
 @sync_to_async
@@ -301,7 +308,7 @@ def _off_recipient(slug: str, chat_id_str: str) -> dict:
 
 @router.message(Command("projects"))
 async def cmd_projects(message: Message):
-    if not await _is_admin(message.chat.id):
+    if not await _is_admin(message):
         await message.answer("⛔ Команда доступна только администраторам.")
         return
     text = await _get_projects_list()
@@ -310,7 +317,7 @@ async def cmd_projects(message: Message):
 
 @router.message(Command("invite"))
 async def cmd_invite(message: Message, command=None):
-    if not await _is_admin(message.chat.id):
+    if not await _is_admin(message):
         await message.answer("⛔ Команда доступна только администраторам.")
         return
     slug = (command.args or "").strip() if command else ""
@@ -331,7 +338,7 @@ async def cmd_invite(message: Message, command=None):
 
 @router.message(Command("last"))
 async def cmd_last(message: Message, command=None):
-    if not await _is_admin(message.chat.id):
+    if not await _is_admin(message):
         await message.answer("⛔ Команда доступна только администраторам.")
         return
     slug = (command.args or "").strip() if command else ""
@@ -344,7 +351,7 @@ async def cmd_last(message: Message, command=None):
 
 @router.message(Command("send"))
 async def cmd_send(message: Message, command=None):
-    if not await _is_admin(message.chat.id):
+    if not await _is_admin(message):
         await message.answer("⛔ Команда доступна только администраторам.")
         return
     args = (command.args or "").strip() if command else ""
@@ -362,7 +369,7 @@ async def cmd_send(message: Message, command=None):
 
 @router.message(Command("off"))
 async def cmd_off(message: Message, command=None):
-    if not await _is_admin(message.chat.id):
+    if not await _is_admin(message):
         await message.answer("⛔ Команда доступна только администраторам.")
         return
     args = (command.args or "").strip() if command else ""
