@@ -117,7 +117,7 @@ async def cmd_start_with_code(message: Message, command=None):
         await message.answer("❌ Код приглашения истёк или уже использован.")
     else:
         await message.answer(
-            f"✅ Подключено!\n\nПроект: <b>{result['project']}</b>\n"
+            f"✅ Подключено!\n\nПроект: <b>{html.escape(result['project'])}</b>\n"
             f"Теперь заявки будут приходить сюда.\n\nДля отключения отправьте /stop",
             parse_mode="HTML",
         )
@@ -236,7 +236,7 @@ def _get_projects_list() -> str:
     lines = []
     for p in projects:
         count = Subscription.objects.filter(project=p, is_active=True).count()
-        lines.append(f"• <b>{p.name}</b> ({p.slug}) — {count} получателей")
+        lines.append(f"• <b>{html.escape(p.name)}</b> ({p.slug}) — {count} получателей")
     return "\n".join(lines)
 
 
@@ -275,8 +275,11 @@ def _get_last_leads(slug: str, limit: int = 5) -> str:
         name = fields.get("Имя", fields.get("имя", "—"))
         phone = fields.get("Телефон", fields.get("телефон", "—"))
         status_emoji = {"new": "🆕", "in_progress": "📋", "done": "✅"}.get(l.status, "")
-        lines.append(f"{status_emoji} #{l.pk} {name} {phone} ({l.created_at.strftime('%d.%m %H:%M')})")
-    return f"<b>{project.name}</b> — последние заявки:\n\n" + "\n".join(lines)
+        lines.append(
+            f"{status_emoji} #{l.pk} {html.escape(str(name))} {html.escape(str(phone))} "
+            f"({l.created_at.strftime('%d.%m %H:%M')})"
+        )
+    return f"<b>{html.escape(project.name)}</b> — последние заявки:\n\n" + "\n".join(lines)
 
 
 @sync_to_async
@@ -347,7 +350,7 @@ async def cmd_invite(message: Message, command=None):
         await message.answer("Проект не найден.")
     else:
         await message.answer(
-            f"Код приглашения для <b>{result['project']}</b>:\n"
+            f"Код приглашения для <b>{html.escape(result['project'])}</b>:\n"
             f"<code>{result['code']}</code>\n\n"
             f"Личный чат: {result['link']}\n"
             f"Добавить в группу: {result['group_link']}\n\n"
